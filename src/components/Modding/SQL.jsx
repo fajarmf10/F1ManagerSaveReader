@@ -1,12 +1,26 @@
-import {Autocomplete, Button, Divider, FormControl, Grid, MenuItem, Select, TextField, Typography} from "@mui/material";
-import {DataGrid} from "@mui/x-data-grid";
-import {useSnackbar} from "notistack";
+import {
+  Autocomplete,
+  Button,
+  CircularProgress,
+  Divider,
+  FormControl,
+  Grid,
+  MenuItem,
+  Select,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
+import { useSnackbar } from "notistack";
 import * as React from "react";
-import {useContext, useEffect, useState} from "react";
-import {BasicInfoContext, DatabaseContext, MetadataContext} from "@/js/Contexts";
+import { useContext, useEffect, useState } from "react";
+import {
+  BasicInfoContext,
+  DatabaseContext,
+  MetadataContext,
+} from "@/js/Contexts";
 
 export default function DataBrowser() {
-
   const database = useContext(DatabaseContext);
 
   const { enqueueSnackbar } = useSnackbar();
@@ -14,6 +28,7 @@ export default function DataBrowser() {
   const [tables, setTables] = useState([]);
   const [currentTable, setCurrentTable] = useState("Player");
   const [isSimple, setIsSimple] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const [columns, setColumns] = useState([]);
   const [maxSizes, setMaxSizes] = useState([]);
@@ -22,67 +37,80 @@ export default function DataBrowser() {
 
   const exec = (stmt, isSimple = false) => {
     try {
+      setIsLoading(true);
       let r = database.exec(stmt);
       if (r.length) {
         let [{ columns, values }] = r;
-        let maxSizes = columns.map(x => Math.min(x.length, 10));
+        let maxSizes = columns.map((x) => Math.min(x.length, 10));
         setColumns(columns);
         setIsSimple(isSimple);
-        setValues(values.map(val => {
-          let row = {};
-          val.map((x, _idx) => {
-            if (x !== null) {
-              row[columns[_idx]] = x;
-              let sl = Math.min(String(x).length, 50);
-              if (typeof x === 'number' && Math.round(x) !== x) {
-                sl = x.toFixed(3).length;
+        setValues(
+          values.map((val) => {
+            let row = {};
+            val.map((x, _idx) => {
+              if (x !== null) {
+                row[columns[_idx]] = x;
+                let sl = Math.min(String(x).length, 50);
+                if (typeof x === "number" && Math.round(x) !== x) {
+                  sl = x.toFixed(3).length;
+                }
+                if (sl > maxSizes[_idx]) {
+                  maxSizes[_idx] = sl;
+                }
               }
-              if (sl > maxSizes[_idx]) {
-                maxSizes[_idx] = sl;
-              }
-            }
+            });
+            return row;
           })
-          return row;
-        }));
+        );
         setMaxSizes(maxSizes);
       } else {
         setColumns([]);
         setValues([]);
       }
       if (!isSimple) {
-        enqueueSnackbar(
-          `Executed successfully`,
-          { variant: "success" }
-        );
+        enqueueSnackbar(`Executed successfully`, { variant: "success" });
       }
     } catch (e) {
-      enqueueSnackbar(
-        `Error: ${e}`,
-        { variant: "error" }
-      );
+      enqueueSnackbar(`Error: ${e}`, { variant: "error" });
+    } finally {
+      setIsLoading(false);
     }
-  }
-
+  };
 
   useEffect(() => {
     try {
       if (database) {
-        let [{ values }] = database.exec("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC");
-        setTables(values.map(x => x[0]));
-        setCurrentTable(currentTable);
-        if (stmt !== `SELECT * FROM ${currentTable}`) {
-          setStmt(`SELECT * FROM ${currentTable}`);
-          exec(`SELECT *, _rowid_ as _rowid_ FROM ${currentTable}`, true);
-        }
+        setTimeout(() => {
+          try {
+            let [{ values }] = database.exec(
+              "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC"
+            );
+            setTables(values.map((x) => x[0]));
+            setCurrentTable(currentTable);
+            if (stmt !== `SELECT * FROM ${currentTable}`) {
+              setStmt(`SELECT * FROM ${currentTable}`);
+              exec(
+                `SELECT *, _rowid_ as _rowid_ FROM ${currentTable} LIMIT 100`,
+                true
+              );
+            }
+          } catch (error) {
+            console.error("Error loading tables:", error);
+            enqueueSnackbar(`Error loading tables: ${error.message}`, {
+              variant: "error",
+            });
+          }
+        }, 100);
       }
-    } catch {
-
+    } catch (error) {
+      console.error("Database initialization error:", error);
+      enqueueSnackbar(`Database initialization error: ${error.message}`, {
+        variant: "error",
+      });
     }
-
-  }, [database])
+  }, [database]);
 
   const totalColumnWidth = maxSizes.reduce((x, y) => x + y, 0);
-
 
   return (
     <div>
@@ -97,22 +125,32 @@ export default function DataBrowser() {
             value={stmt}
             variant="standard"
             fullWidth
-            onChange={
-              (e) => setStmt(e.target.value)
-            }
+            onChange={(e) => setStmt(e.target.value)}
           />
         </Grid>
         <Grid item>
-          <Button color="warning" variant="contained" sx={{ my: 1 }} onClick={() => {
-            exec(stmt);
-          }}>
+          <Button
+            color="warning"
+            variant="contained"
+            sx={{ my: 1 }}
+            onClick={() => {
+              exec(stmt);
+            }}
+          >
             Execute
           </Button>
         </Grid>
       </Grid>
       <Grid container spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
         <Grid item flex={1}>
-          <FormControl variant="standard" sx={{ display: "inline-block", verticalAlign: "middle", width: "100%" }}>
+          <FormControl
+            variant="standard"
+            sx={{
+              display: "inline-block",
+              verticalAlign: "middle",
+              width: "100%",
+            }}
+          >
             <Autocomplete
               disablePortal
               options={tables}
@@ -125,65 +163,83 @@ export default function DataBrowser() {
                   exec(`SELECT *, _rowid_ as _rowid_ FROM ${nv}`, true);
                 }
               }}
-              renderInput={(params) => <TextField
-                variant="standard"
-                {...params}
-                label="Browse a Table"
-                autoComplete="off"
-              />}
+              renderInput={(params) => (
+                <TextField
+                  variant="standard"
+                  {...params}
+                  label="Browse a Table"
+                  autoComplete="off"
+                />
+              )}
             />
           </FormControl>
         </Grid>
       </Grid>
       <Divider variant="fullWidth" sx={{ my: 2 }} />
-      <DataGrid
-        key={stmt}
-        onProcessRowUpdateError={e => console.error(e)}
-        processRowUpdate={(newRow, oldRow) => {
-          if (isSimple) {
-            for(const key of columns) {
-              if (key === "id" || key === "_rowid_") continue;
-              if (newRow[key] !== oldRow[key]) {
-                if (typeof oldRow[key] === "number") {
-                  newRow[key] = Number(newRow[key]);
+      {isLoading ? (
+        <div
+          style={{ display: "flex", justifyContent: "center", padding: "20px" }}
+        >
+          <CircularProgress />
+        </div>
+      ) : (
+        <DataGrid
+          key={stmt}
+          onProcessRowUpdateError={(e) => console.error(e)}
+          processRowUpdate={(newRow, oldRow) => {
+            if (isSimple) {
+              for (const key of columns) {
+                if (key === "id" || key === "_rowid_") continue;
+                if (newRow[key] !== oldRow[key]) {
+                  if (typeof oldRow[key] === "number") {
+                    newRow[key] = Number(newRow[key]);
+                  }
+                  if (typeof oldRow[key] === "string") {
+                    newRow[key] = String(newRow[key]);
+                  }
+                  database.exec(
+                    `UPDATE ${currentTable} SET ${key} = :value WHERE _rowid_ = :rowid`,
+                    {
+                      ":value": newRow[key],
+                      ":rowid": newRow._rowid_,
+                    }
+                  );
+                  exec(
+                    `SELECT *, _rowid_ as _rowid_ FROM ${currentTable}`,
+                    true
+                  );
                 }
-                if (typeof oldRow[key] === "string") {
-                  newRow[key] = String(newRow[key]);
-                }
-                database.exec(`UPDATE ${currentTable} SET ${key} = :value WHERE _rowid_ = :rowid`, {
-                  ":value": newRow[key],
-                  ":rowid": newRow._rowid_,
-                })
-                exec(`SELECT *, _rowid_ as _rowid_ FROM ${currentTable}`, true);
               }
+              // refresh();
+              return newRow;
             }
-            // refresh();
-            return newRow;
-          }
-          return oldRow;
-        }}
-        rows={values.map((x, _idx) => (
-          {id: x.row ? x.row : _idx, ...x}
-        ))}
-        columns={[
-          ...columns.filter(x => x === "_rowid_").map((x, _idx) => ({
-            field: x,
-            headerName: "#",
-            width: 70,
-          })),
-          ...columns.filter(x => x !== "_rowid_").map((x, _idx) => ({
-            field: x,
-            headerName: x === "_rowid_" ? "#" : x,
-            width: maxSizes[_idx] * 15 + 10,
-            editable: isSimple && (x !== "_rowid_"),
-          }))
-        ]}
-        density="compact"
-        initialState={{
-          pagination: { paginationModel: { pageSize: 20 } },
-        }}
-        pageSizeOptions={[20, 50, 100]}
-      />
+            return oldRow;
+          }}
+          rows={values.map((x, _idx) => ({ id: x.row ? x.row : _idx, ...x }))}
+          columns={[
+            ...columns
+              .filter((x) => x === "_rowid_")
+              .map((x, _idx) => ({
+                field: x,
+                headerName: "#",
+                width: 70,
+              })),
+            ...columns
+              .filter((x) => x !== "_rowid_")
+              .map((x, _idx) => ({
+                field: x,
+                headerName: x === "_rowid_" ? "#" : x,
+                width: maxSizes[_idx] * 15 + 10,
+                editable: isSimple && x !== "_rowid_",
+              })),
+          ]}
+          density="compact"
+          initialState={{
+            pagination: { paginationModel: { pageSize: 20 } },
+          }}
+          pageSizeOptions={[20, 50, 100]}
+        />
+      )}
     </div>
   );
 }
